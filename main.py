@@ -62,7 +62,7 @@ def main() -> Never:
         # notify
         if build_id != current_build_id:
             r = requests.post(WEBHOOK_URL, json={"content": f"<@{MENTION_USER_ID}> New build detected: {current_build_id if current_build_id is not None else 'first run'} -> {build_id}"})
-            if r.status_code != 200:
+            if r.status_code != 204:
                 logging.error(f"Failed to notify: {r.status_code}")
                 raise SystemExit(1)
             logging.info(f"New build detected: {build_id}")
