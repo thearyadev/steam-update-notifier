@@ -17,3 +17,8 @@ supports only one app id
 supports only public steam items
 
 use https://github.com/kurokobo/game-update-notifier if you need any of those things.
+
+## LICENSE
+wtfpl
+
+inspired by https://github.com/kurokobo/game-update-notifier (no code copied/referenced. mit license restrictions do not apply)
