@@ -1,0 +1,8 @@
+services:
+    ta-pruner:
+        image: thearyadev0/steam-update-notifier:latest # or version tag
+        environment:
+            WEBHOOK_URL: "" # discord webhook url
+            MENTION_USER_ID: "" # discord user id to mention
+            APP_ID: "" # steam app id
+            SLEEP: "" # OPTONAL: number of seconds to wait before running again
