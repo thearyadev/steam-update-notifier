@@ -1,22 +1,18 @@
 from steam.client import SteamClient
-from typing import Never 
 from steam.enums import EResult
+from typing import NoReturn
 import logging
 import time
 import requests
 import os
 import signal
 
+
 def signal_handler(signum, frame):
     raise SystemExit(0)
 
-def get_authed_client() -> tuple[SteamClient, EResult]:
-    client = SteamClient()
-    if not client.logged_on:
-        return client, client.anonymous_login()
-    return client, EResult.OK
 
-def get_env() -> tuple[int, int, str, str]:
+def get_env():
     try:
         return (
             int(os.environ["APP_ID"]),
@@ -32,41 +28,59 @@ def get_env() -> tuple[int, int, str, str]:
         raise SystemExit(1)
 
 
-def main() -> Never:
+def main() -> NoReturn:
     signal.signal(signal.SIGINT, signal_handler)
-    logging.basicConfig(level=logging.INFO)
-    current_build_id = None
-    APP_ID, SLEEP, WEBHOOK_URL, MENTION_USER_ID = get_env()
-    
-    while True:
-        client, login_result = get_authed_client()
-        if login_result != EResult.OK:
-            logging.error(f"Failed to login: {login_result}")
-            raise SystemExit(1)
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 
+    APP_ID, SLEEP, WEBHOOK_URL, MENTION_USER_ID = get_env()
+    current_timeupdated = None
+
+    client = SteamClient()
+    logging.info("Logging in to Steam (anonymous)...")
+    if client.anonymous_login() != EResult.OK:
+        logging.error("Failed to login anonymously to Steam")
+        raise SystemExit(1)
+
+    logging.info(f"Starting update monitor for app {APP_ID}, branch: public")
+
+    while True:
         prod_info = client.get_product_info(apps=[APP_ID])
-        if not prod_info:
-            logging.error("Failed to get product info")
-            raise SystemExit(1)
-        
+        if not prod_info or "apps" not in prod_info or APP_ID not in prod_info["apps"]:
+            logging.warning("No product info returned for app. Retrying...")
+            time.sleep(SLEEP)
+            continue
+
         try:
             release_info = prod_info["apps"][APP_ID]["depots"]["branches"]["public"]
         except KeyError:
-            logging.error("Failed to get release info. Data may not be in the expected shape.")
-            raise SystemExit(1)
-        
-        build_id = release_info.get("buildid")
-        if not build_id:
-            logging.error("Failed to get build id. Data may not be in the expected shape.")
-            raise SystemExit(1)
-        # notify
-        if build_id != current_build_id:
-            r = requests.post(WEBHOOK_URL, json={"content": f"<@{MENTION_USER_ID}> New build detected: {current_build_id if current_build_id is not None else 'first run'} -> {build_id}"})
-            if r.status_code != 204:
-                logging.error(f"Failed to notify: {r.status_code}")
-                raise SystemExit(1)
-            logging.info(f"New build detected: {build_id}")
-            current_build_id = build_id
+            logging.warning("No public branch info for this app. Retrying...")
+            time.sleep(SLEEP)
+            continue
+
+        time_updated = release_info.get("timeupdated")
+        if not time_updated:
+            logging.warning("No timeupdated value found in branch data")
+            time.sleep(SLEEP)
+            continue
+
+        if time_updated != current_timeupdated:
+            if current_timeupdated is None:
+                logging.info(f"First run. Current timeupdated: {time_updated}")
+            else:
+                logging.info(f"Update detected! {current_timeupdated} -> {time_updated}")
+                payload = {
+                    "content": f"<@{MENTION_USER_ID}> Update detected for app {APP_ID}: {current_timeupdated} -> {time_updated}"
+                }
+                r = requests.post(WEBHOOK_URL, json=payload)
+                if r.status_code != 204:
+                    logging.error(f"Failed to notify via webhook: {r.status_code} {r.text}")
+                else:
+                    logging.info("Notification sent successfully.")
+
+            current_timeupdated = time_updated
+        else:
+            logging.info(f"No update detected. Still at timeupdated: {time_updated}")
+
         time.sleep(SLEEP)
 
 
